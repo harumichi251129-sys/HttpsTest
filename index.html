@@ -7,61 +7,20 @@
 <title>Human Recognition System</title>
 <style>
 *{box-sizing:border-box}
-body{
- margin:0;
- background:#111;
- color:white;
- font-family:Arial,sans-serif;
-}
-header{
- padding:16px;
- border-bottom:1px solid #333;
-}
-h2{margin:0;font-size:19px}
-main{padding:16px;max-width:900px;margin:auto}
-#screen{
- position:relative;
- width:100%;
- background:#000;
- overflow:hidden;
- border-radius:10px;
-}
-video{
- display:block;
- width:100%;
-}
-canvas{
- position:absolute;
- inset:0;
- width:100%;
- height:100%;
- pointer-events:none;
-}
-.panel{
- margin-top:15px;
- padding:15px;
- background:#202020;
- border-radius:10px;
-}
-input,button{
- width:100%;
- padding:12px;
- margin-top:8px;
- border:0;
- border-radius:6px;
- font-size:15px;
-}
-button{
- background:#2878df;
- color:white;
- cursor:pointer;
-}
+body{margin:0;background:#111;color:white;font-family:Arial,sans-serif}
+header{padding:16px;border-bottom:1px solid #333}
+main{max-width:900px;margin:auto;padding:16px}
+#screen{position:relative;background:black;border-radius:10px;overflow:hidden}
+video{display:block;width:100%}
+canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.panel{margin-top:15px;padding:15px;background:#202020;border-radius:10px}
+input,button{padding:12px;margin-top:8px;border:0;border-radius:6px;font-size:15px}
+input[type=text]{width:100%}
+button{background:#2878df;color:white;cursor:pointer}
 button:disabled{opacity:.4}
-#status{color:#aaa;font-size:13px;margin-top:12px}
-#people{margin-top:10px;color:#ccc;font-size:14px}
-.blue{color:#3989ff}
-.red{color:#ff4545}
-small{color:#999}
+#status{font-size:13px;color:#aaa;margin-top:12px}
+.person{padding:9px 0;border-bottom:1px solid #333}
+small{color:#aaa}
 </style>
 </head>
 <body>
@@ -71,7 +30,6 @@ small{color:#999}
 </header>
 
 <main>
-
 <div id="screen">
 <video id="video" autoplay muted playsinline></video>
 <canvas id="canvas"></canvas>
@@ -79,28 +37,22 @@ small{color:#999}
 
 <div class="panel">
 <h3>人物登録</h3>
-
-<input id="personName" placeholder="登録する人の名前">
-
-<label style="font-size:13px">
-<input id="consent" type="checkbox" style="width:auto">
+<input id="personName" type="text" placeholder="名前">
+<label style="display:block;margin-top:10px;font-size:13px">
+<input id="consent" type="checkbox">
 本人の同意を得て登録します
 </label>
-
-<button id="register" disabled>人物を登録（8秒間）</button>
-
-<div id="status">AIモデルを読み込んでください。</div>
+<button id="register" disabled>登録開始（12秒）</button>
+<div id="status">AIモデル読み込み中...</div>
 </div>
 
 <div class="panel">
 <h3>登録済み人物</h3>
-<div id="people">登録なし</div>
-<button id="clear">登録データを全削除</button>
+<div id="people"></div>
+<button id="clear">全登録データ削除</button>
 </div>
-
 </main>
 
-<!-- AIライブラリ -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
@@ -109,109 +61,119 @@ small{color:#999}
 const video=document.getElementById("video");
 const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d");
-
 const status=document.getElementById("status");
 const people=document.getElementById("people");
 const registerButton=document.getElementById("register");
 
 let bodyModel=null;
 let ready=false;
-let running=false;
-let registration=null;
+let processing=false;
+let registering=null;
 
 let registered=JSON.parse(
- localStorage.getItem("registeredPeople")||"[]"
+ sessionStorage.getItem("registeredPeople")||"[]"
 );
 
-// 顔認識の許容距離
-const MATCH_THRESHOLD=0.48;
+let tracks=[];
+let nextTrackId=1;
 
-// 登録情報の表示
-function updatePeople(){
- if(registered.length===0){
-  people.textContent="登録なし";
-  return;
- }
+const FACE_THRESHOLD=0.48;
+const TRACK_KEEP_TIME=2500;
+const FACE_KEEP_TIME=1800;
 
- people.innerHTML="";
-
- registered.forEach((person,index)=>{
-  const div=document.createElement("div");
-  div.style.padding="8px 0";
-
-  const name=document.createElement("span");
-  name.textContent=person.name;
-
-  const remove=document.createElement("button");
-  remove.textContent="削除";
-  remove.style.width="70px";
-  remove.style.marginLeft="10px";
-  remove.onclick=()=>{
-   registered.splice(index,1);
-   save();
-   updatePeople();
-  };
-
-  div.append(name,remove);
-  people.appendChild(div);
- });
-}
-
+// ========================
 // 保存
+// ========================
+
 function save(){
- localStorage.setItem(
+ sessionStorage.setItem(
   "registeredPeople",
   JSON.stringify(registered)
  );
 }
 
-// AIモデル読み込み
+function updatePeople(){
+ people.innerHTML="";
+
+ if(!registered.length){
+  people.textContent="登録なし";
+  return;
+ }
+
+ registered.forEach((p,index)=>{
+  const div=document.createElement("div");
+  div.className="person";
+
+  const name=document.createElement("span");
+  name.textContent=p.name+" ";
+  
+  const info=document.createElement("small");
+  info.textContent=
+   "顔："+Object.values(p.angles).reduce((n,a)=>n+a.length,0)+
+   "件 / 全身："+p.bodies.length+"件";
+
+  const button=document.createElement("button");
+  button.textContent="削除";
+  button.onclick=()=>{
+   registered.splice(index,1);
+   save();
+   updatePeople();
+  };
+
+  div.append(name,info,button);
+  people.appendChild(div);
+ });
+}
+
+// ========================
+// AIモデル
+// ========================
+
 async function loadModels(){
- status.textContent="AIモデル読み込み中...";
-
  try{
-  await faceapi.nets.tinyFaceDetector.loadFromUri(
-   "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights"
-  );
+  status.textContent="顔認識モデル読み込み中...";
 
-  await faceapi.nets.faceLandmark68TinyNet.loadFromUri(
-   "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights"
-  );
+  const url=
+   "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights";
 
-  await faceapi.nets.faceRecognitionNet.loadFromUri(
-   "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights"
-  );
+  await faceapi.nets.tinyFaceDetector.loadFromUri(url);
+  await faceapi.nets.faceLandmark68TinyNet.loadFromUri(url);
+  await faceapi.nets.faceRecognitionNet.loadFromUri(url);
+
+  status.textContent="人物検出モデル読み込み中...";
 
   bodyModel=await cocoSsd.load({
    base:"lite_mobilenet_v2"
   });
 
-  status.textContent="AIモデル読み込み完了";
-  registerButton.disabled=false;
+  status.textContent="モデル読み込み完了";
 
- }catch(error){
-  status.textContent="モデル読み込みエラー: "+error.message;
-  console.error(error);
+  registerButton.disabled=false;
+  startCamera();
+
+ }catch(e){
+  status.textContent="読み込みエラー: "+e.message;
+  console.error(e);
  }
 }
 
-// カメラ開始
+// ========================
+// カメラ
+// ========================
+
 async function startCamera(){
  try{
   const stream=await navigator.mediaDevices.getUserMedia({
    video:{
-    facingMode:"user",
     width:{ideal:640},
-    height:{ideal:480}
+    height:{ideal:480},
+    facingMode:"user"
    },
    audio:false
   });
 
   video.srcObject=stream;
-
-  await new Promise(resolve=>{
-   video.onloadedmetadata=resolve;
-  });
+  await video.play();
 
   canvas.width=video.videoWidth;
   canvas.height=video.videoHeight;
@@ -219,244 +181,553 @@ async function startCamera(){
   ready=true;
   detectLoop();
 
- }catch(error){
-  status.textContent="カメラエラー: "+error.message;
+ }catch(e){
+  status.textContent="カメラエラー: "+e.message;
  }
 }
 
-// 顔認識
+// ========================
+// 全身の外見特徴
+// RGB色ヒストグラム
+// ========================
+
+const sampleCanvas=document.createElement("canvas");
+sampleCanvas.width=40;
+sampleCanvas.height=60;
+
+const sampleCtx=sampleCanvas.getContext("2d",{
+ willReadFrequently:true
+});
+
+function getBodyFeature(box){
+ const [x,y,w,h]=box;
+
+ if(w<10||h<20)return null;
+
+ const sx=Math.max(0,x);
+ const sy=Math.max(0,y);
+ const sw=Math.min(canvas.width-sx,w);
+ const sh=Math.min(canvas.height-sy,h);
+
+ if(sw<10||sh<20)return null;
+
+ sampleCtx.drawImage(
+  video,sx,sy,sw,sh,
+  0,0,40,60
+ );
+
+ const data=sampleCtx.getImageData(
+  0,0,40,60
+ ).data;
+
+ const hist=new Array(64).fill(0);
+
+ for(let i=0;i<data.length;i+=16){
+  const r=data[i]>>6;
+  const g=data[i+1]>>6;
+  const b=data[i+2]>>6;
+
+  hist[r*16+g*4+b]++;
+ }
+
+ const total=hist.reduce((a,b)=>a+b,0);
+
+ return hist.map(v=>v/total);
+}
+
+// 色特徴の違い
+function featureDistance(a,b){
+ if(!a||!b)return 1;
+
+ let similarity=0;
+
+ for(let i=0;i<a.length;i++){
+  similarity+=Math.sqrt(a[i]*b[i]);
+ }
+
+ return 1-similarity;
+}
+
+// 複数サンプルの比較
+function bestBodyDistance(a,b){
+ let best=1;
+
+ for(const x of a){
+  for(const y of b){
+   best=Math.min(
+    best,
+    featureDistance(x,y)
+   );
+  }
+ }
+
+ return best;
+}
+
+// ========================
+// 顔の向き判定
+// ========================
+
+function getAngle(face){
+ const points=face.landmarks.positions;
+
+ const nose=points[30];
+
+ const leftEye=points.slice(36,42);
+ const rightEye=points.slice(42,48);
+
+ const leftX=leftEye.reduce((s,p)=>s+p.x,0)/6;
+ const rightX=rightEye.reduce((s,p)=>s+p.x,0)/6;
+
+ const center=(leftX+rightX)/2;
+ const width=face.detection.box.width;
+
+ const yaw=(nose.x-center)/width;
+
+ if(yaw<-0.065)return "left";
+ if(yaw>0.065)return "right";
+
+ return "front";
+}
+
+// ========================
+// 顔の本人照合
+// ========================
+
 function recognizeFace(descriptor){
  let best=null;
- let bestDistance=Infinity;
+ let distance=Infinity;
 
  for(const person of registered){
-  for(const saved of person.descriptors){
-   const distance=faceapi.euclideanDistance(
-    descriptor,
-    saved
-   );
+  for(const angle of ["front","left","right"]){
+   for(const saved of person.angles[angle]){
+    const d=faceapi.euclideanDistance(
+     descriptor,
+     saved
+    );
 
-   if(distance<bestDistance){
-    bestDistance=distance;
-    best=person;
+    if(d<distance){
+     distance=d;
+     best=person;
+    }
    }
   }
  }
 
- if(best && bestDistance<MATCH_THRESHOLD){
+ if(best&&distance<FACE_THRESHOLD){
   return best.name;
  }
 
  return null;
 }
 
-// 描画
-function drawPerson(person,name){
- const [x,y,w,h]=person.bbox;
+// ========================
+// 人物追跡
+// ========================
 
- ctx.strokeStyle=name?"#ff3030":"#3989ff";
- ctx.lineWidth=3;
+function IoU(a,b){
+ const x1=Math.max(a[0],b[0]);
+ const y1=Math.max(a[1],b[1]);
+ const x2=Math.min(a[0]+a[2],b[0]+b[2]);
+ const y2=Math.min(a[1]+a[3],b[1]+b[3]);
 
- ctx.strokeRect(x,y,w,h);
+ const intersection=
+  Math.max(0,x2-x1)*Math.max(0,y2-y1);
 
- const label=name||"Unknown";
+ const union=
+  a[2]*a[3]+b[2]*b[3]-intersection;
 
- ctx.font="bold 17px Arial";
-
- const textWidth=ctx.measureText(label).width;
-
- ctx.fillStyle=name?"#ff3030":"#3989ff";
-
- ctx.fillRect(
-  x,
-  Math.max(0,y-25),
-  textWidth+14,
-  25
- );
-
- ctx.fillStyle="white";
-
- ctx.fillText(label,x+7,Math.max(18,y-7));
+ return union>0?intersection/union:0;
 }
 
-// メイン処理
-async function detectLoop(){
- if(!ready || !running && registration===null)return;
+function centerDistance(a,b){
+ const ax=a[0]+a[2]/2;
+ const ay=a[1]+a[3]/2;
+ const bx=b[0]+b[2]/2;
+ const by=b[1]+b[3]/2;
 
- try{
-  const [persons,faces]=await Promise.all([
+ const dx=ax-bx;
+ const dy=ay-by;
 
-   bodyModel.detect(video,20,0.45),
+ return Math.sqrt(dx*dx+dy*dy)/
+  Math.max(1,Math.sqrt(a[2]*a[2]+a[3]*a[3]));
+}
 
-   faceapi
-    .detectAllFaces(
-     video,
-     new faceapi.TinyFaceDetectorOptions({
-      inputSize:320,
-      scoreThreshold:0.5
-     })
-    )
-    .withFaceLandmarks(true)
-    .withFaceDescriptors()
+function associateTracks(detections,now){
+ const pairs=[];
 
-  ]);
+ for(let i=0;i<detections.length;i++){
+  for(let j=0;j<tracks.length;j++){
+   const d=detections[i];
+   const t=tracks[j];
 
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+   const overlap=IoU(d.bbox,t.box);
+   const appearance=featureDistance(d.feature,t.feature);
+   const movement=centerDistance(d.bbox,t.box);
 
-  // 登録中は最大の顔の特徴を記録
-  if(registration){
-   if(Date.now()>=registration.end){
-    finishRegistration();
-   }else if(faces.length>0){
-    let largest=faces[0];
+   if(
+    (overlap>0.03||appearance<0.20) &&
+    movement<1.5
+   ){
+    const cost=
+     0.55*(1-overlap)+
+     0.45*appearance;
 
-    for(const face of faces){
-     if(
-      face.detection.box.width>
-      largest.detection.box.width
-     ){
-      largest=face;
-     }
-    }
-
-    registration.descriptors.push(
-     Array.from(largest.descriptor)
-    );
-
-    status.textContent=
-     "登録中... 特徴データ "+ 
-     registration.descriptors.length+" 件";
+    pairs.push({i,j,cost});
    }
   }
-
-  let recognizedCount=0;
-
-  // 人物ごとに顔を照合
-  for(const person of persons){
-   if(person.class!=="person")continue;
-
-   const [x,y,w,h]=person.bbox;
-
-   let matchedFace=null;
-
-   for(const face of faces){
-    const box=face.detection.box;
-
-    const centerX=box.x+box.width/2;
-    const centerY=box.y+box.height/2;
-
-    // 顔が人物の枠内にあるか
-    if(
-     centerX>=x &&
-     centerX<=x+w &&
-     centerY>=y &&
-     centerY<=y+h
-    ){
-     matchedFace=face;
-     break;
-    }
-   }
-
-   let name=null;
-
-   if(matchedFace){
-    name=recognizeFace(
-     matchedFace.descriptor
-    );
-   }
-
-   if(name)recognizedCount++;
-
-   drawPerson(person,name);
-  }
-
-  status.textContent=registration
-   ?"人物登録中..."
-   :"検出人数: "+persons.filter(p=>p.class==="person").length+
-    " / 登録人物一致: "+recognizedCount;
-
- }catch(error){
-  console.error(error);
  }
 
- setTimeout(detectLoop,400);
+ pairs.sort((a,b)=>a.cost-b.cost);
+
+ const usedDetections=new Set();
+ const usedTracks=new Set();
+
+ for(const pair of pairs){
+  if(
+   usedDetections.has(pair.i)||
+   usedTracks.has(pair.j)
+  )continue;
+
+  const d=detections[pair.i];
+  const t=tracks[pair.j];
+
+  t.box=d.bbox;
+  t.feature=d.feature;
+  t.lastSeen=now;
+  t.matched=true;
+
+  usedDetections.add(pair.i);
+  usedTracks.add(pair.j);
+ }
+
+ for(let i=0;i<detections.length;i++){
+  if(usedDetections.has(i))continue;
+
+  const d=detections[i];
+
+  tracks.push({
+   id:nextTrackId++,
+   box:d.bbox,
+   feature:d.feature,
+   name:null,
+   lastFaceAt:0,
+   lastSeen:now,
+   matched:true
+  });
+ }
+
+ tracks=tracks.filter(
+  t=>now-t.lastSeen<TRACK_KEEP_TIME
+ );
+
 }
 
-// 登録開始
+// ========================
+// 登録
+// ========================
+
 registerButton.onclick=()=>{
  const name=document.getElementById("personName").value.trim();
- const consent=document.getElementById("consent").checked;
 
  if(!name){
   alert("名前を入力してください");
   return;
  }
 
- if(!consent){
+ if(!document.getElementById("consent").checked){
   alert("本人の同意を確認してください");
   return;
  }
 
- if(registration){
-  alert("すでに登録中です");
+ if(registering){
+  alert("登録中です");
   return;
  }
 
- registration={
-  name:name,
-  descriptors:[],
-  end:Date.now()+8000
+ registering={
+  name,
+  end:Date.now()+12000,
+  angles:{
+   front:[],
+   left:[],
+   right:[]
+  },
+  bodies:[],
+  lastCapture:0
  };
 
  status.textContent=
-  "カメラの前でゆっくり一回転してください。";
-
+  "12秒間、ゆっくり一回転してください。";
 };
 
-// 登録完了
+// ========================
+// 登録品質の確認
+// ========================
+
 function finishRegistration(){
- if(!registration)return;
+ if(!registering)return;
 
- const data=registration;
- registration=null;
+ const data=registering;
+ registering=null;
 
- if(data.descriptors.length<3){
+ const counts={
+  front:data.angles.front.length,
+  left:data.angles.left.length,
+  right:data.angles.right.length
+ };
+
+ if(
+  counts.front<2||
+  counts.left<1||
+  counts.right<1||
+  data.bodies.length<5
+ ){
   status.textContent=
-   "顔を十分に検出できませんでした。再登録してください。";
+   "登録品質不足。正面・左右の顔と全身を再度撮影してください。";
   return;
  }
 
+ registered=registered.filter(
+  p=>p.name!==data.name
+ );
+
  registered.push({
   name:data.name,
-  descriptors:data.descriptors
+  angles:data.angles,
+  bodies:data.bodies
  });
 
  save();
  updatePeople();
 
  status.textContent=
-  data.name+" の登録が完了しました。";
-
- document.getElementById("personName").value="";
+  data.name+" の登録完了。";
 }
 
-// 全削除
+// ========================
+// 顔と人物の対応
+// ========================
+
+function findFaceForPerson(person,faces){
+ const [x,y,w,h]=person.bbox;
+
+ let best=null;
+ let bestArea=0;
+
+ for(const face of faces){
+  const box=face.detection.box;
+
+  const cx=box.x+box.width/2;
+  const cy=box.y+box.height/2;
+
+  if(
+   cx>=x&&cx<=x+w&&
+   cy>=y&&cy<=y+h
+  ){
+   const area=box.width*box.height;
+
+   if(area>bestArea){
+    best=face;
+    bestArea=area;
+   }
+  }
+ }
+
+ return best;
+}
+
+// ========================
+// 描画
+// ========================
+
+function drawTrack(track,now){
+ const [x,y,w,h]=track.box;
+
+ const confirmed=
+  track.name&&
+  now-track.lastFaceAt<FACE_KEEP_TIME;
+
+ ctx.strokeStyle=confirmed?"#ff3030":"#3989ff";
+ ctx.lineWidth=3;
+
+ ctx.strokeRect(x,y,w,h);
+
+ let label="Unknown";
+
+ if(confirmed){
+  label=track.name;
+ }else if(track.name){
+  label="確認待ち";
+ }
+
+ ctx.font="bold 16px Arial";
+
+ const tw=ctx.measureText(label).width;
+
+ ctx.fillStyle=confirmed?"#ff3030":"#3989ff";
+ ctx.fillRect(
+  x,Math.max(0,y-25),tw+14,25
+ );
+
+ ctx.fillStyle="white";
+ ctx.fillText(label,x+7,Math.max(18,y-7));
+}
+
+// ========================
+// メイン処理
+// ========================
+
+async function detectLoop(){
+ if(!ready||processing)return;
+
+ processing=true;
+
+ try{
+  const now=Date.now();
+
+  const [persons,faces]=await Promise.all([
+   bodyModel.detect(video,20,0.45),
+
+   faceapi.detectAllFaces(
+    video,
+    new faceapi.TinyFaceDetectorOptions({
+     inputSize:320,
+     scoreThreshold:0.5
+    })
+   ).withFaceLandmarks(true)
+    .withFaceDescriptors()
+  ]);
+
+  const detections=[];
+
+  for(const person of persons){
+   if(person.class!=="person")continue;
+
+   const feature=getBodyFeature(person.bbox);
+
+   if(feature){
+    detections.push({
+     bbox:person.bbox,
+     feature
+    });
+   }
+  }
+
+  // 全身特徴を使った追跡
+  associateTracks(detections,now);
+
+  // 登録中は1人だけが映っている場合に収集
+  if(registering){
+   if(now>=registering.end){
+    finishRegistration();
+   }else if(
+    detections.length===1&&
+    now-registering.lastCapture>350
+   ){
+    const face=findFaceForPerson(
+     detections[0],faces
+    );
+
+    if(face){
+     const box=face.detection.box;
+
+     if(
+      box.width>=70&&
+      face.detection.score>=0.65
+     ){
+      const angle=getAngle(face);
+
+      registering.angles[angle].push(
+       Array.from(face.descriptor)
+      );
+
+      registering.lastCapture=now;
+     }
+    }
+
+    registering.bodies.push(
+     detections[0].feature
+    );
+
+    status.textContent=
+     "登録中 正面:"+registering.angles.front.length+
+     " 左:"+registering.angles.left.length+
+     " 右:"+registering.angles.right.length+
+     " 全身:"+registering.bodies.length;
+   }
+  }
+
+  // 顔で本人確認
+  for(let i=0;i<detections.length;i++){
+   const face=findFaceForPerson(
+    detections[i],faces
+   );
+
+   if(!face)continue;
+
+   const matched=tracks.find(t=>
+    t.matched&&
+    IoU(t.box,detections[i].bbox)>0.5
+   );
+
+   if(!matched)continue;
+
+   const name=recognizeFace(face.descriptor);
+
+   if(name){
+    matched.name=name;
+    matched.lastFaceAt=now;
+   }
+  }
+
+  // 描画
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  for(const track of tracks){
+   if(track.matched&&now-track.lastSeen<500){
+    drawTrack(track,now);
+   }
+   track.matched=false;
+  }
+
+  const visible=tracks.filter(
+   t=>now-t.lastSeen<500
+  ).length;
+
+  status.textContent=registering
+   ?"人物登録中..."
+   :"検出人数: "+visible+
+    " / 追跡ID: "+nextTrackId;
+
+ }catch(e){
+  console.error(e);
+  status.textContent="処理エラー: "+e.message;
+ }
+
+ processing=false;
+
+ setTimeout(detectLoop,350);
+}
+
+// ========================
+// データ削除
+// ========================
+
 document.getElementById("clear").onclick=()=>{
  if(!confirm("登録データをすべて削除しますか？"))return;
 
  registered=[];
- save();
+ tracks=[];
+ sessionStorage.removeItem("registeredPeople");
+
  updatePeople();
+ status.textContent="登録データを削除しました。";
 };
 
 // 初期化
-async function init(){
- updatePeople();
- await loadModels();
- await startCamera();
-}
-
-init()
+updatePeople();
+loadModels();
 
 </script>
 </body>
