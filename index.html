@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>iOS WebXR AR – ランダムボックス</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+  body,html{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;}
+  #enterBtn{
+    position:absolute;top:20px;left:50%;transform:translateX(-50%);
+    padding:12px 24px;font-size:16px;background:#0066ff;color:#fff;
+    border:none;border-radius:8px;z-index:10;cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<button id="enterBtn">Start AR</button>
+
+<!-- three.js (r158 以降) と WebXR のヘルパー -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/ARButton.js"></script>
+
+<script>
+(() => {
+  const btn = document.getElementById('enterBtn');
+
+  // -------------------------------------------------
+  // 1️⃣ ユーザー操作（ボタン）で AR セッション開始
+  // -------------------------------------------------
+  btn.addEventListener('click', async () => {
+    // ---- three.js 基本セットアップ ----
+    const scene   = new THREE.Scene();
+    const camera  = new THREE.PerspectiveCamera();
+    const renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
+    btn.style.display = 'none';      // ボタンは隠す
+
+    // 軽い照明（箱を見やすくするだけ）
+    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+    scene.add(light);
+
+    // -------------------------------------------------
+    // 2️⃣ WebXR セッション要求（plane‑detection, hit‑test, dom‑overlay）
+    // -------------------------------------------------
+    const sessionInit = {
+      requiredFeatures: ['hit-test', 'plane-detection', 'dom-overlay'],
+      planeDetection: { mode: 'horizontal' },          // 「床」だけを対象に
+      domOverlay: { root: document.body }
+    };
+
+    // iOS ではユーザー操作が必須 → ここで取得
+    const xrSession = await navigator.xr.requestSession('immersive-ar', sessionInit);
+    renderer.xr.setSession(xrSession);
+
+    // 参照空間 (ローカル座標系)
+    const refSpace = await xrSession.requestReferenceSpace('local');
+
+    // ビューア空間から hit‑test ソースを取得
+    const viewerSpace = await xrSession.requestReferenceSpace('viewer');
+    const hitTestSrc  = await xrSession.requestHitTestSource({ space: viewerSpace });
+
+    // -------------------------------------------------
+    // 3️⃣ ランダム箱生成ユーティリティ
+    // -------------------------------------------------
+    const boxMat = new THREE.MeshStandardMaterial({color:0x00ff00, roughness:0.5});
+    function createBoxAt(position) {
+      const size = 0.1 + Math.random()*0.2;                     // 10‑30 cm
+      const geom = new THREE.BoxGeometry(size, size, size);
+      const mesh = new THREE.Mesh(geom, boxMat);
+      // floor に乗せる + ±20 cm のランダムオフセット
+      mesh.position.set(
+        position.x + (Math.random()-0.5)*0.4,
+        position.y + size/2,
+        position.z + (Math.random()-0.5)*0.4
+      );
+      scene.add(mesh);
+    }
+
+    // -------------------------------------------------
+    // 4️⃣ フレームループ（ヒットテスト → 箱配置 → 描画）
+    // -------------------------------------------------
+    let boxesPlaced = false;          // 最初にヒットが取れたら 1 回だけ配置
+
+    renderer.setAnimationLoop((time, frame) => {
+      if (frame) {
+        const hitTestResults = frame.getHitTestResults(hitTestSrc);
+        if (hitTestResults.length > 0) {
+          const hit = hitTestResults[0];
+          const pose = hit.getPose(refSpace);
+          const p = pose.transform.position;   // X,Y,Z (メートル)
+
+          if (!boxesPlaced) {
+            for (let i = 0; i < 5; i++) createBoxAt(p);
+            boxesPlaced = true;
+          }
+        }
+      }
+      renderer.render(scene, camera);
+    });
+
+    // -------------------------------------------------
+    // 5️⃣ セッション終了ハンドラ（任意）
+    // -------------------------------------------------
+    xrSession.addEventListener('end', () => {
+      renderer.setAnimationLoop(null);
+      document.body.removeChild(renderer.domElement);
+      btn.style.display = 'block';
+    });
+  });
+})();
+</script>
+</body>
+</html>
