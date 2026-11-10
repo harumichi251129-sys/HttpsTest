@@ -16,97 +16,100 @@
 <body>
 <button id="enterBtn">Start AR</button>
 
-<!-- three.js (r158 以降) と WebXR のヘルパー -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/ARButton.js"></script>
+<!-- three.js (r158) -->
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js';
+import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/ARButton.js';
 
-<script>
 (() => {
   const btn = document.getElementById('enterBtn');
 
   // -------------------------------------------------
-  // 1️⃣ ユーザー操作（ボタン）で AR セッション開始
+  // 1️⃣ 環境チェック
   // -------------------------------------------------
+  async function canStartAR() {
+    if (!navigator.xr) return false;
+    return await navigator.xr.isSessionSupported('immersive-ar');
+  }
+
   btn.addEventListener('click', async () => {
-    // ---- three.js 基本セットアップ ----
+    if (!(await canStartAR())) {
+      alert('この端末・ブラウザでは AR が使えません。Safari の「設定 → 詳細 → WebXR」をオンにしてください。');
+      return;
+    }
+
+    // -------------------------------------------------
+    // 2️⃣ three.js 基本セットアップ
+    // -------------------------------------------------
     const scene   = new THREE.Scene();
     const camera  = new THREE.PerspectiveCamera();
-    const renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
-    btn.style.display = 'none';      // ボタンは隠す
+    btn.style.display = 'none';
 
-    // 軽い照明（箱を見やすくするだけ）
+    // 簡易照明
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
     scene.add(light);
 
     // -------------------------------------------------
-    // 2️⃣ WebXR セッション要求（plane‑detection, hit‑test, dom‑overlay）
+    // 3️⃣ XR セッション開始
     // -------------------------------------------------
     const sessionInit = {
-      requiredFeatures: ['hit-test', 'plane-detection', 'dom-overlay'],
-      planeDetection: { mode: 'horizontal' },          // 「床」だけを対象に
+      requiredFeatures: ['hit-test', 'dom-overlay'],
       domOverlay: { root: document.body }
+      // ← plane‑detection は iOS では未実装なので外す
     };
 
-    // iOS ではユーザー操作が必須 → ここで取得
     const xrSession = await navigator.xr.requestSession('immersive-ar', sessionInit);
     renderer.xr.setSession(xrSession);
 
-    // 参照空間 (ローカル座標系)
-    const refSpace = await xrSession.requestReferenceSpace('local');
-
-    // ビューア空間から hit‑test ソースを取得
+    // 参照空間
+    const refSpace   = await xrSession.requestReferenceSpace('local');
     const viewerSpace = await xrSession.requestReferenceSpace('viewer');
-    const hitTestSrc  = await xrSession.requestHitTestSource({ space: viewerSpace });
+    const hitTestSrc = await xrSession.requestHitTestSource({ space: viewerSpace });
 
     // -------------------------------------------------
-    // 3️⃣ ランダム箱生成ユーティリティ
+    // 4️⃣ ランダム箱ユーティリティ
     // -------------------------------------------------
-    const boxMat = new THREE.MeshStandardMaterial({color:0x00ff00, roughness:0.5});
-    function createBoxAt(position) {
-      const size = 0.1 + Math.random()*0.2;                     // 10‑30 cm
+    const boxMat = new THREE.MeshStandardMaterial({ color:0x00ff00, roughness:0.5 });
+    function createBoxAt(pos) {
+      const size = 0.1 + Math.random()*0.2; // 10‑30 cm
       const geom = new THREE.BoxGeometry(size, size, size);
       const mesh = new THREE.Mesh(geom, boxMat);
-      // floor に乗せる + ±20 cm のランダムオフセット
       mesh.position.set(
-        position.x + (Math.random()-0.5)*0.4,
-        position.y + size/2,
-        position.z + (Math.random()-0.5)*0.4
+        pos.x + (Math.random()-0.5)*0.4,
+        pos.y + size/2,
+        pos.z + (Math.random()-0.5)*0.4
       );
       scene.add(mesh);
     }
 
     // -------------------------------------------------
-    // 4️⃣ フレームループ（ヒットテスト → 箱配置 → 描画）
+    // 5️⃣ アニメーションループ
     // -------------------------------------------------
-    let boxesPlaced = false;          // 最初にヒットが取れたら 1 回だけ配置
-
+    let placed = false;
     renderer.setAnimationLoop((time, frame) => {
       if (frame) {
-        const hitTestResults = frame.getHitTestResults(hitTestSrc);
-        if (hitTestResults.length > 0) {
-          const hit = hitTestResults[0];
-          const pose = hit.getPose(refSpace);
-          const p = pose.transform.position;   // X,Y,Z (メートル)
-
-          if (!boxesPlaced) {
-            for (let i = 0; i < 5; i++) createBoxAt(p);
-            boxesPlaced = true;
-          }
+        const hits = frame.getHitTestResults(hitTestSrc);
+        if (hits.length > 0 && !placed) {
+          const hitPose = hits[0].getPose(refSpace);
+          const p = hitPose.transform.position;
+          for (let i = 0; i < 5; i++) createBoxAt(p);
+          placed = true;
         }
       }
       renderer.render(scene, camera);
     });
 
     // -------------------------------------------------
-    // 5️⃣ セッション終了ハンドラ（任意）
+    // 6️⃣ セッション終了ハンドラ（任意）
     // -------------------------------------------------
     xrSession.addEventListener('end', () => {
       renderer.setAnimationLoop(null);
-      document.body.removeChild(renderer.domElement);
+      renderer.domElement.remove();
       btn.style.display = 'block';
     });
   });
