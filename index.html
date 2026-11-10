@@ -7,22 +7,131 @@
 <title>Human Recognition System</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#111;color:white;font-family:Arial,sans-serif}
-header{padding:16px;border-bottom:1px solid #333}
-main{max-width:900px;margin:auto;padding:16px}
-#screen{position:relative;background:black;border-radius:10px;overflow:hidden}
-video{display:block;width:100%}
-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.panel{margin-top:15px;padding:15px;background:#202020;border-radius:10px}
-input,button{padding:12px;margin-top:8px;border:0;border-radius:6px;font-size:15px}
-input[type=text]{width:100%}
-button{background:#2878df;color:white;cursor:pointer}
-button:disabled{opacity:.4}
-#status{font-size:13px;color:#aaa;margin-top:12px}
-.person{padding:9px 0;border-bottom:1px solid #333}
-small{color:#aaa}
+body{
+ margin:0;
+ background:#111;
+ color:white;
+ font-family:Arial,sans-serif;
+}
+header{
+ padding:16px;
+ border-bottom:1px solid #333;
+}
+main{
+ max-width:1000px;
+ margin:auto;
+ padding:16px;
+}
+h2,h3{margin:0 0 12px}
+#screen{
+ position:relative;
+ background:#000;
+ border-radius:10px;
+ overflow:hidden;
+}
+video{
+ display:block;
+ width:100%;
+}
+canvas{
+ position:absolute;
+ inset:0;
+ width:100%;
+ height:100%;
+}
+.panel{
+ margin-top:15px;
+ padding:16px;
+ background:#202020;
+ border-radius:10px;
+}
+input,button{
+ padding:12px;
+ border:0;
+ border-radius:6px;
+ font-size:14px;
+}
+input[type=text],input[type=number]{
+ width:100%;
+ background:#333;
+ color:white;
+ margin-top:8px;
+}
+input[type=checkbox]{
+ width:auto;
+}
+button{
+ background:#2878df;
+ color:white;
+ cursor:pointer;
+ margin-top:8px;
+}
+button:disabled{
+ opacity:.4;
+ cursor:default;
+}
+button.danger{background:#a33}
+#status{
+ color:#aaa;
+ font-size:13px;
+ margin-top:12px;
+}
+#instruction{
+ font-size:22px;
+ font-weight:bold;
+ text-align:center;
+ margin:15px 0;
+ color:#55aaff;
+}
+#progress{
+ height:6px;
+ background:#444;
+ border-radius:10px;
+ overflow:hidden;
+ margin-top:10px;
+}
+#progressBar{
+ height:100%;
+ width:0%;
+ background:#3989ff;
+}
+.grid{
+ display:grid;
+ grid-template-columns:repeat(2,minmax(0,1fr));
+ gap:10px;
+}
+.data{
+ background:#151515;
+ padding:12px;
+ border-radius:8px;
+}
+.data small{
+ color:#999;
+ display:block;
+}
+.data strong{
+ display:block;
+ margin-top:5px;
+}
+.person{
+ padding:12px;
+ border-bottom:1px solid #333;
+}
+.blue{color:#3989ff}
+.red{color:#ff4545}
+.green{color:#4cdb8b}
+#tracks{
+ display:grid;
+ gap:8px;
+}
+.note{
+ font-size:12px;
+ color:#999;
+ line-height:1.6;
+}
 </style>
 </head>
+
 <body>
 
 <header>
@@ -30,45 +139,113 @@ small{color:#aaa}
 </header>
 
 <main>
+
+<!-- CAMERA -->
 <div id="screen">
 <video id="video" autoplay muted playsinline></video>
 <canvas id="canvas"></canvas>
 </div>
 
 <div class="panel">
-<h3>人物登録</h3>
-<input id="personName" type="text" placeholder="名前">
-<label style="display:block;margin-top:10px;font-size:13px">
-<input id="consent" type="checkbox">
-本人の同意を得て登録します
-</label>
-<button id="register" disabled>登録開始（12秒）</button>
+<h3>システム状態</h3>
 <div id="status">AIモデル読み込み中...</div>
 </div>
 
+<!-- CALIBRATION -->
 <div class="panel">
-<h3>登録済み人物</h3>
-<div id="people"></div>
-<button id="clear">全登録データ削除</button>
+<h3>① カメラ校正</h3>
+
+<p class="note">
+既知の距離に立った人物をカメラに映してください。
+その人物の身長とカメラからの実際の距離を入力して校正します。
+</p>
+
+<label>校正する人物の身長（cm）</label>
+<input id="calHeight" type="number" value="170">
+
+<label>カメラからの実際の距離（m）</label>
+<input id="calDistance" type="number" value="2" step="0.1">
+
+<button id="calibrate" disabled>現在の映像でカメラを校正</button>
+
+<div id="calStatus" class="note">
+未校正
 </div>
+</div>
+
+<!-- REGISTRATION -->
+<div class="panel">
+<h3>② 人物登録</h3>
+
+<input id="personName" type="text" placeholder="登録する人の名前">
+
+<label style="display:block;margin-top:10px">
+<input id="consent" type="checkbox">
+本人の同意を得て登録します
+</label>
+
+<div id="instruction">登録待機中</div>
+
+<div id="progress">
+<div id="progressBar"></div>
+</div>
+
+<button id="register" disabled>人物登録開始</button>
+
+<p class="note">
+正面・右・左の順番で撮影します。
+各方向で顔の特徴を3回以上取得します。
+登録中は対象者1人だけをカメラに映してください。
+</p>
+</div>
+
+<!-- TRACKING -->
+<div class="panel">
+<h3>③ 検出中の人物</h3>
+<div id="tracks"></div>
+</div>
+
+<!-- REGISTERED -->
+<div class="panel">
+<h3>④ 登録済み人物</h3>
+<div id="people"></div>
+<button id="clear" class="danger">登録データを全削除</button>
+</div>
+
 </main>
 
+<!-- AI LIBRARIES -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 
 <script>
+
+// ====================================
+// ELEMENTS
+// ====================================
+
 const video=document.getElementById("video");
 const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d");
+
 const status=document.getElementById("status");
-const people=document.getElementById("people");
+const tracksUI=document.getElementById("tracks");
+const peopleUI=document.getElementById("people");
+
+const instruction=document.getElementById("instruction");
+const progressBar=document.getElementById("progressBar");
+
 const registerButton=document.getElementById("register");
+const calibrateButton=document.getElementById("calibrate");
+
+// ====================================
+// VARIABLES
+// ====================================
 
 let bodyModel=null;
 let ready=false;
 let processing=false;
-let registering=null;
 
 let registered=JSON.parse(
  sessionStorage.getItem("registeredPeople")||"[]"
@@ -77,13 +254,29 @@ let registered=JSON.parse(
 let tracks=[];
 let nextTrackId=1;
 
-const FACE_THRESHOLD=0.48;
-const TRACK_KEEP_TIME=2500;
-const FACE_KEEP_TIME=1800;
+let calibration=JSON.parse(
+ localStorage.getItem("cameraCalibration")||"null"
+);
 
-// ========================
-// 保存
-// ========================
+let pendingCalibration=false;
+let registering=null;
+let registrationStep=0;
+
+const steps=["front","right","left"];
+
+const messages={
+ front:"正面を向いてください",
+ right:"右を向いてください",
+ left:"左を向いてください"
+};
+
+const FACE_THRESHOLD=0.48;
+const FACE_KEEP_TIME=1800;
+const TRACK_KEEP_TIME=2500;
+
+// ====================================
+// STORAGE
+// ====================================
 
 function save(){
  sessionStorage.setItem(
@@ -92,11 +285,22 @@ function save(){
  );
 }
 
+function saveCalibration(){
+ localStorage.setItem(
+  "cameraCalibration",
+  JSON.stringify(calibration)
+ );
+}
+
+// ====================================
+// UI
+// ====================================
+
 function updatePeople(){
- people.innerHTML="";
+ peopleUI.innerHTML="";
 
  if(!registered.length){
-  people.textContent="登録なし";
+  peopleUI.textContent="登録なし";
   return;
  }
 
@@ -104,30 +308,39 @@ function updatePeople(){
   const div=document.createElement("div");
   div.className="person";
 
-  const name=document.createElement("span");
-  name.textContent=p.name+" ";
-  
-  const info=document.createElement("small");
-  info.textContent=
-   "顔："+Object.values(p.angles).reduce((n,a)=>n+a.length,0)+
-   "件 / 全身："+p.bodies.length+"件";
+  const name=document.createElement("strong");
+  name.textContent=p.name;
 
-  const button=document.createElement("button");
-  button.textContent="削除";
-  button.onclick=()=>{
+  const count=document.createElement("small");
+  count.textContent=
+   "顔データ: "+
+   Object.values(p.angles).reduce((n,a)=>n+a.length,0)+
+   "件 / 全身データ: "+p.bodies.length+"件";
+
+  const remove=document.createElement("button");
+  remove.textContent="削除";
+  remove.onclick=()=>{
    registered.splice(index,1);
    save();
    updatePeople();
   };
 
-  div.append(name,info,button);
-  people.appendChild(div);
+  div.append(name,count,remove);
+  peopleUI.appendChild(div);
  });
 }
 
-// ========================
-// AIモデル
-// ========================
+function updateCalibrationUI(){
+ document.getElementById("calStatus").textContent=
+  calibration
+   ?"校正済み / 焦点距離相当値: "+
+    calibration.focal.toFixed(1)+" px"
+   :"未校正";
+}
+
+// ====================================
+// LOAD AI
+// ====================================
 
 async function loadModels(){
  try{
@@ -146,20 +359,22 @@ async function loadModels(){
    base:"lite_mobilenet_v2"
   });
 
-  status.textContent="モデル読み込み完了";
+  status.textContent="AIモデル読み込み完了";
 
   registerButton.disabled=false;
+  calibrateButton.disabled=false;
+
   startCamera();
 
  }catch(e){
-  status.textContent="読み込みエラー: "+e.message;
+  status.textContent="モデル読み込みエラー: "+e.message;
   console.error(e);
  }
 }
 
-// ========================
-// カメラ
-// ========================
+// ====================================
+// CAMERA
+// ====================================
 
 async function startCamera(){
  try{
@@ -186,10 +401,77 @@ async function startCamera(){
  }
 }
 
-// ========================
-// 全身の外見特徴
-// RGB色ヒストグラム
-// ========================
+// ====================================
+// CAMERA CALIBRATION
+// ====================================
+
+calibrateButton.onclick=()=>{
+ const height=Number(
+  document.getElementById("calHeight").value
+ );
+
+ const distance=Number(
+  document.getElementById("calDistance").value
+ );
+
+ if(height<50||height>250||distance<=0){
+  alert("身長と距離を正しく入力してください");
+  return;
+ }
+
+ pendingCalibration={
+  height:height/100,
+  distance:distance
+ };
+
+ document.getElementById("calStatus").textContent=
+  "校正待機中... 対象者1人を全身が映るようにしてください";
+};
+
+function calibratePerson(person){
+ if(!pendingCalibration)return;
+
+ const boxHeight=person.bbox[3];
+
+ if(boxHeight<80)return;
+
+ const focal=
+  boxHeight*
+  pendingCalibration.distance/
+  pendingCalibration.height;
+
+ calibration={
+  focal:focal,
+  referenceHeight:pendingCalibration.height,
+  referenceDistance:pendingCalibration.distance,
+  imageWidth:canvas.width,
+  imageHeight:canvas.height
+ };
+
+ saveCalibration();
+ updateCalibrationUI();
+
+ pendingCalibration=false;
+
+ document.getElementById("calStatus").textContent=
+  "校正完了！ 距離推定が利用可能です。";
+}
+
+function estimateDistance(box){
+ if(!calibration)return null;
+
+ const height=box[3];
+
+ if(height<=0)return null;
+
+ // 校正時の人物と同じ身長を仮定した概算
+ return calibration.focal*
+  calibration.referenceHeight/height;
+}
+
+// ====================================
+// BODY APPEARANCE FEATURE
+// ====================================
 
 const sampleCanvas=document.createElement("canvas");
 sampleCanvas.width=40;
@@ -201,8 +483,6 @@ const sampleCtx=sampleCanvas.getContext("2d",{
 
 function getBodyFeature(box){
  const [x,y,w,h]=box;
-
- if(w<10||h<20)return null;
 
  const sx=Math.max(0,x);
  const sy=Math.max(0,y);
@@ -235,7 +515,6 @@ function getBodyFeature(box){
  return hist.map(v=>v/total);
 }
 
-// 色特徴の違い
 function featureDistance(a,b){
  if(!a||!b)return 1;
 
@@ -248,25 +527,9 @@ function featureDistance(a,b){
  return 1-similarity;
 }
 
-// 複数サンプルの比較
-function bestBodyDistance(a,b){
- let best=1;
-
- for(const x of a){
-  for(const y of b){
-   best=Math.min(
-    best,
-    featureDistance(x,y)
-   );
-  }
- }
-
- return best;
-}
-
-// ========================
-// 顔の向き判定
-// ========================
+// ====================================
+// FACE ANGLE
+// ====================================
 
 function getAngle(face){
  const points=face.landmarks.positions;
@@ -290,16 +553,16 @@ function getAngle(face){
  return "front";
 }
 
-// ========================
-// 顔の本人照合
-// ========================
+// ====================================
+// FACE MATCHING
+// ====================================
 
 function recognizeFace(descriptor){
  let best=null;
  let distance=Infinity;
 
  for(const person of registered){
-  for(const angle of ["front","left","right"]){
+  for(const angle of steps){
    for(const saved of person.angles[angle]){
     const d=faceapi.euclideanDistance(
      descriptor,
@@ -321,111 +584,9 @@ function recognizeFace(descriptor){
  return null;
 }
 
-// ========================
-// 人物追跡
-// ========================
-
-function IoU(a,b){
- const x1=Math.max(a[0],b[0]);
- const y1=Math.max(a[1],b[1]);
- const x2=Math.min(a[0]+a[2],b[0]+b[2]);
- const y2=Math.min(a[1]+a[3],b[1]+b[3]);
-
- const intersection=
-  Math.max(0,x2-x1)*Math.max(0,y2-y1);
-
- const union=
-  a[2]*a[3]+b[2]*b[3]-intersection;
-
- return union>0?intersection/union:0;
-}
-
-function centerDistance(a,b){
- const ax=a[0]+a[2]/2;
- const ay=a[1]+a[3]/2;
- const bx=b[0]+b[2]/2;
- const by=b[1]+b[3]/2;
-
- const dx=ax-bx;
- const dy=ay-by;
-
- return Math.sqrt(dx*dx+dy*dy)/
-  Math.max(1,Math.sqrt(a[2]*a[2]+a[3]*a[3]));
-}
-
-function associateTracks(detections,now){
- const pairs=[];
-
- for(let i=0;i<detections.length;i++){
-  for(let j=0;j<tracks.length;j++){
-   const d=detections[i];
-   const t=tracks[j];
-
-   const overlap=IoU(d.bbox,t.box);
-   const appearance=featureDistance(d.feature,t.feature);
-   const movement=centerDistance(d.bbox,t.box);
-
-   if(
-    (overlap>0.03||appearance<0.20) &&
-    movement<1.5
-   ){
-    const cost=
-     0.55*(1-overlap)+
-     0.45*appearance;
-
-    pairs.push({i,j,cost});
-   }
-  }
- }
-
- pairs.sort((a,b)=>a.cost-b.cost);
-
- const usedDetections=new Set();
- const usedTracks=new Set();
-
- for(const pair of pairs){
-  if(
-   usedDetections.has(pair.i)||
-   usedTracks.has(pair.j)
-  )continue;
-
-  const d=detections[pair.i];
-  const t=tracks[pair.j];
-
-  t.box=d.bbox;
-  t.feature=d.feature;
-  t.lastSeen=now;
-  t.matched=true;
-
-  usedDetections.add(pair.i);
-  usedTracks.add(pair.j);
- }
-
- for(let i=0;i<detections.length;i++){
-  if(usedDetections.has(i))continue;
-
-  const d=detections[i];
-
-  tracks.push({
-   id:nextTrackId++,
-   box:d.bbox,
-   feature:d.feature,
-   name:null,
-   lastFaceAt:0,
-   lastSeen:now,
-   matched:true
-  });
- }
-
- tracks=tracks.filter(
-  t=>now-t.lastSeen<TRACK_KEEP_TIME
- );
-
-}
-
-// ========================
-// 登録
-// ========================
+// ====================================
+// REGISTRATION
+// ====================================
 
 registerButton.onclick=()=>{
  const name=document.getElementById("personName").value.trim();
@@ -440,51 +601,58 @@ registerButton.onclick=()=>{
   return;
  }
 
- if(registering){
-  alert("登録中です");
-  return;
- }
+ if(registering)return;
 
  registering={
   name,
-  end:Date.now()+12000,
   angles:{
    front:[],
-   left:[],
-   right:[]
+   right:[],
+   left:[]
   },
   bodies:[],
   lastCapture:0
  };
 
- status.textContent=
-  "12秒間、ゆっくり一回転してください。";
+ registrationStep=0;
+
+ instruction.textContent=messages.front;
+ progressBar.style.width="0%";
 };
 
-// ========================
-// 登録品質の確認
-// ========================
+function nextRegistrationStep(){
+ registrationStep++;
+
+ if(registrationStep>=3){
+  finishRegistration();
+  return;
+ }
+
+ instruction.textContent=
+  messages[steps[registrationStep]];
+}
 
 function finishRegistration(){
- if(!registering)return;
-
  const data=registering;
  registering=null;
 
+ if(!data)return;
+
  const counts={
   front:data.angles.front.length,
-  left:data.angles.left.length,
-  right:data.angles.right.length
+  right:data.angles.right.length,
+  left:data.angles.left.length
  };
 
  if(
-  counts.front<2||
-  counts.left<1||
-  counts.right<1||
+  counts.front<3||
+  counts.right<3||
+  counts.left<3||
   data.bodies.length<5
  ){
+  instruction.textContent="登録失敗";
   status.textContent=
-   "登録品質不足。正面・左右の顔と全身を再度撮影してください。";
+   "必要な特徴データが不足しています。再登録してください。";
   return;
  }
 
@@ -501,19 +669,21 @@ function finishRegistration(){
  save();
  updatePeople();
 
- status.textContent=
-  data.name+" の登録完了。";
+ instruction.textContent="登録完了！";
+ progressBar.style.width="100%";
+
+ document.getElementById("personName").value="";
 }
 
-// ========================
-// 顔と人物の対応
-// ========================
+// ====================================
+// FACE AND BODY ASSOCIATION
+// ====================================
 
 function findFaceForPerson(person,faces){
  const [x,y,w,h]=person.bbox;
 
  let best=null;
- let bestArea=0;
+ let area=0;
 
  for(const face of faces){
   const box=face.detection.box;
@@ -525,11 +695,11 @@ function findFaceForPerson(person,faces){
    cx>=x&&cx<=x+w&&
    cy>=y&&cy<=y+h
   ){
-   const area=box.width*box.height;
+   const a=box.width*box.height;
 
-   if(area>bestArea){
+   if(a>area){
     best=face;
-    bestArea=area;
+    area=a;
    }
   }
  }
@@ -537,9 +707,149 @@ function findFaceForPerson(person,faces){
  return best;
 }
 
-// ========================
-// 描画
-// ========================
+// ====================================
+// TRACKING
+// ====================================
+
+function IoU(a,b){
+ const x1=Math.max(a[0],b[0]);
+ const y1=Math.max(a[1],b[1]);
+ const x2=Math.min(a[0]+a[2],b[0]+b[2]);
+ const y2=Math.min(a[1]+a[3],b[1]+b[3]);
+
+ const intersection=
+  Math.max(0,x2-x1)*Math.max(0,y2-y1);
+
+ const union=
+  a[2]*a[3]+b[2]*b[3]-intersection;
+
+ return union>0?intersection/union:0;
+}
+
+function centerOf(box){
+ return {
+  x:box[0]+box[2]/2,
+  y:box[1]+box[3]/2
+ };
+}
+
+function associateTracks(detections,now){
+ const pairs=[];
+
+ for(let i=0;i<detections.length;i++){
+  for(let j=0;j<tracks.length;j++){
+   const d=detections[i];
+   const t=tracks[j];
+
+   const oldCenter=centerOf(t.box);
+   const newCenter=centerOf(d.bbox);
+
+   const dx=newCenter.x-oldCenter.x;
+   const dy=newCenter.y-oldCenter.y;
+
+   const movement=Math.sqrt(dx*dx+dy*dy)/
+    Math.max(30,Math.sqrt(t.box[2]**2+t.box[3]**2));
+
+   const overlap=IoU(d.bbox,t.box);
+   const appearance=featureDistance(
+    d.feature,t.feature
+   );
+
+   if(
+    movement<1.5&&
+    (overlap>0.02||appearance<0.22)
+   ){
+    pairs.push({
+     i,j,
+     cost:
+      0.55*(1-overlap)+
+      0.45*appearance
+    });
+   }
+  }
+ }
+
+ pairs.sort((a,b)=>a.cost-b.cost);
+
+ const usedD=new Set();
+ const usedT=new Set();
+
+ for(const pair of pairs){
+  if(usedD.has(pair.i)||usedT.has(pair.j))continue;
+
+  const d=detections[pair.i];
+  const t=tracks[pair.j];
+
+  const oldCenter=centerOf(t.box);
+  const newCenter=centerOf(d.bbox);
+
+  const dt=Math.max(0.001,(now-t.lastSeen)/1000);
+
+  t.vx=(newCenter.x-oldCenter.x)/dt;
+  t.vy=(newCenter.y-oldCenter.y)/dt;
+
+  t.box=d.bbox;
+  t.feature=d.feature;
+  t.lastSeen=now;
+  t.matched=true;
+
+  usedD.add(pair.i);
+  usedT.add(pair.j);
+ }
+
+ for(let i=0;i<detections.length;i++){
+  if(usedD.has(i))continue;
+
+  const d=detections[i];
+
+  tracks.push({
+   id:nextTrackId++,
+   box:d.bbox,
+   feature:d.feature,
+   name:null,
+   lastFaceAt:0,
+   lastSeen:now,
+   vx:0,
+   vy:0,
+   matched:true
+  });
+ }
+
+ tracks=tracks.filter(
+  t=>now-t.lastSeen<TRACK_KEEP_TIME
+ );
+}
+
+// ====================================
+// MOVEMENT DIRECTION
+// ====================================
+
+function getDirection(track){
+ const vx=track.vx;
+ const vy=track.vy;
+
+ const speed=Math.sqrt(vx*vx+vy*vy);
+
+ if(speed<15)return "停止";
+
+ if(Math.abs(vx)>Math.abs(vy)*1.4){
+  return vx>0?"右":"左";
+ }
+
+ if(Math.abs(vy)>Math.abs(vx)*1.4){
+  return vy>0?"下":"上";
+ }
+
+ if(vx>0&&vy>0)return "右下";
+ if(vx>0&&vy<0)return "右上";
+ if(vx<0&&vy>0)return "左下";
+
+ return "左上";
+}
+
+// ====================================
+// DRAW
+// ====================================
 
 function drawTrack(track,now){
  const [x,y,w,h]=track.box;
@@ -553,11 +863,9 @@ function drawTrack(track,now){
 
  ctx.strokeRect(x,y,w,h);
 
- let label="Unknown";
+ let label=confirmed?track.name:"Unknown";
 
- if(confirmed){
-  label=track.name;
- }else if(track.name){
+ if(track.name&&!confirmed){
   label="確認待ち";
  }
 
@@ -566,6 +874,7 @@ function drawTrack(track,now){
  const tw=ctx.measureText(label).width;
 
  ctx.fillStyle=confirmed?"#ff3030":"#3989ff";
+
  ctx.fillRect(
   x,Math.max(0,y-25),tw+14,25
  );
@@ -574,9 +883,65 @@ function drawTrack(track,now){
  ctx.fillText(label,x+7,Math.max(18,y-7));
 }
 
-// ========================
-// メイン処理
-// ========================
+// ====================================
+// TRACK INFORMATION
+// ====================================
+
+function updateTracksUI(now){
+ tracksUI.innerHTML="";
+
+ const visible=tracks.filter(
+  t=>t.matched&&now-t.lastSeen<500
+ );
+
+ if(!visible.length){
+  tracksUI.textContent="人物を検出していません";
+  return;
+ }
+
+ for(const t of visible){
+  const c=centerOf(t.box);
+
+  const distance=estimateDistance(t.box);
+
+  const speed=Math.sqrt(t.vx*t.vx+t.vy*t.vy);
+
+  const confirmed=
+   t.name&&
+   now-t.lastFaceAt<FACE_KEEP_TIME;
+
+  const div=document.createElement("div");
+  div.className="data";
+
+  const name=document.createElement("strong");
+  name.className=confirmed?"red":"blue";
+  name.textContent=
+   "ID "+t.id+" : "+
+   (confirmed?t.name:t.name?"確認待ち":"未登録");
+
+  const info=document.createElement("div");
+  info.className="note";
+  info.style.marginTop="10px";
+
+  info.textContent=
+   "中心座標: X "+Math.round(c.x)+
+   " / Y "+Math.round(c.y)+
+   "\n枠サイズ: "+Math.round(t.box[2])+
+   " × "+Math.round(t.box[3])+" px"+
+   "\n移動方向: "+getDirection(t)+
+   "\n移動速度: "+Math.round(speed)+" px/s"+
+   "\n距離: "+
+   (distance===null?"未校正":
+    distance.toFixed(2)+" m（概算）");
+
+  div.append(name,info);
+  tracksUI.appendChild(div);
+ }
+}
+
+// ====================================
+// MAIN LOOP
+// ====================================
 
 async function detectLoop(){
  if(!ready||processing)return;
@@ -595,8 +960,9 @@ async function detectLoop(){
      inputSize:320,
      scoreThreshold:0.5
     })
-   ).withFaceLandmarks(true)
-    .withFaceDescriptors()
+   )
+   .withFaceLandmarks(true)
+   .withFaceDescriptors()
   ]);
 
   const detections=[];
@@ -614,51 +980,59 @@ async function detectLoop(){
    }
   }
 
-  // 全身特徴を使った追跡
-  associateTracks(detections,now);
+  // Calibration
+  if(pendingCalibration){
+   if(detections.length===1){
+    calibratePerson(detections[0]);
+   }
+  }
 
-  // 登録中は1人だけが映っている場合に収集
+  // Registration
   if(registering){
-   if(now>=registering.end){
-    finishRegistration();
-   }else if(
-    detections.length===1&&
-    now-registering.lastCapture>350
-   ){
+   if(detections.length===1){
     const face=findFaceForPerson(
      detections[0],faces
     );
 
-    if(face){
-     const box=face.detection.box;
+    if(face&&now-registering.lastCapture>350){
+     const angle=getAngle(face);
+     const expected=steps[registrationStep];
 
      if(
-      box.width>=70&&
+      angle===expected&&
+      face.detection.box.width>=70&&
       face.detection.score>=0.65
      ){
-      const angle=getAngle(face);
-
       registering.angles[angle].push(
        Array.from(face.descriptor)
       );
 
+      registering.bodies.push(
+       detections[0].feature
+      );
+
       registering.lastCapture=now;
+
+      const count=registering.angles[angle].length;
+
+      progressBar.style.width=
+       ((registrationStep*3+Math.min(count,3))/9*100)+"%";
+
+      status.textContent=
+       "登録中: "+messages[angle]+" ("+count+"/3)";
+
+      if(count>=3){
+       nextRegistrationStep();
+      }
      }
     }
-
-    registering.bodies.push(
-     detections[0].feature
-    );
-
-    status.textContent=
-     "登録中 正面:"+registering.angles.front.length+
-     " 左:"+registering.angles.left.length+
-     " 右:"+registering.angles.right.length+
-     " 全身:"+registering.bodies.length;
    }
   }
 
-  // 顔で本人確認
+  // Track update
+  associateTracks(detections,now);
+
+  // Face identification
   for(let i=0;i<detections.length;i++){
    const face=findFaceForPerson(
     detections[i],faces
@@ -681,24 +1055,24 @@ async function detectLoop(){
    }
   }
 
-  // 描画
+  // Draw
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  for(const track of tracks){
-   if(track.matched&&now-track.lastSeen<500){
-    drawTrack(track,now);
+  for(const t of tracks){
+   if(t.matched&&now-t.lastSeen<500){
+    drawTrack(t,now);
    }
-   track.matched=false;
+
+   t.matched=false;
   }
 
-  const visible=tracks.filter(
-   t=>now-t.lastSeen<500
-  ).length;
+  updateTracksUI(now);
 
-  status.textContent=registering
-   ?"人物登録中..."
-   :"検出人数: "+visible+
-    " / 追跡ID: "+nextTrackId;
+  if(!registering&&!pendingCalibration){
+   status.textContent=
+    "検出中 / 人物数: "+detections.length+
+    " / 追跡中: "+tracks.length;
+  }
 
  }catch(e){
   console.error(e);
@@ -710,23 +1084,27 @@ async function detectLoop(){
  setTimeout(detectLoop,350);
 }
 
-// ========================
-// データ削除
-// ========================
+// ====================================
+// DELETE
+// ====================================
 
 document.getElementById("clear").onclick=()=>{
  if(!confirm("登録データをすべて削除しますか？"))return;
 
  registered=[];
  tracks=[];
+
  sessionStorage.removeItem("registeredPeople");
 
  updatePeople();
- status.textContent="登録データを削除しました。";
 };
 
-// 初期化
+// ====================================
+// INIT
+// ====================================
+
 updatePeople();
+updateCalibrationUI();
 loadModels();
 
 </script>
